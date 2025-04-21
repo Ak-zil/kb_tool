@@ -4,3 +4,7 @@ src/
 __pycache__/
 docker-compose.yml
 Dockerfile
+*.db
+*.sqlite3
+*.docx
+*.bin

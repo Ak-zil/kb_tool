@@ -7,8 +7,11 @@ import json
 from typing import List, Dict, Any, Optional, Tuple
 
 from langchain.evaluation import load_evaluator
-from ragas.metrics import faithfulness, answer_relevancy, context_relevancy
-from ragas.llms.langchain import LangchainLLM
+# from ragas.metrics import faithfulness, answer_relevancy, context_relevancy
+from ragas.metrics import faithfulness, answer_relevancy, context_precision
+# from ragas.llms.langchain import LangchainLLM
+# from ragas.integrations.langchain import LangchainLLM
+from ragas.llms import LangchainLLMWrapper
 
 from app.core.llm import get_llm
 
@@ -115,7 +118,7 @@ class EvaluationEngine:
         try:
             # Create LangChain wrapper for our LLM
             llm = get_llm()
-            lc_llm = LangchainLLM(llm=llm)
+            lc_llm = LangchainLLMWrapper(llm=llm)
             
             # Create dataset input
             data = [{
@@ -133,7 +136,7 @@ class EvaluationEngine:
             results["answer_relevancy"] = float(ans_rel_score.mean())
             
             # Run context relevancy evaluation
-            ctx_rel_score = context_relevancy.score(data, llm=lc_llm)
+            ctx_rel_score = answer_relevancy.score(data, llm=lc_llm)
             results["context_relevancy"] = float(ctx_rel_score.mean())
             
             logger.info(f"RAGAS evaluation complete: {results}")

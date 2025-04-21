@@ -109,6 +109,69 @@ class RetrievalEngine:
         
         return [self._format_chat_summary(summary) for summary in summaries]
     
+    # def retrieve_and_generate(
+    #     self, 
+    #     db: Session,
+    #     query: str, 
+    #     include_knowledge: bool = True,
+    #     include_metrics: bool = True,
+    #     include_summaries: bool = True
+    # ) -> Tuple[str, Dict[str, Any]]:
+    #     """
+    #     Retrieve information and generate a response.
+        
+    #     Args:
+    #         db: Database session
+    #         query: User's query
+    #         include_knowledge: Whether to include knowledge base results
+    #         include_metrics: Whether to include metrics
+    #         include_summaries: Whether to include chat summaries
+        
+    #     Returns:
+    #         Tuple of (generated response, retrieval context)
+    #     """
+    #     logger.info(f"Processing query: '{query}'")
+        
+    #     # Initialize context and retrieval sources
+    #     retrieval_context = {
+    #         "knowledge_results": [],
+    #         "metrics_results": [],
+    #         "summary_results": []
+    #     }
+        
+    #     # Check if the query is metrics-related
+    #     is_metrics_query = self._is_metrics_related(query)
+        
+    #     # Retrieve information from different sources
+    #     if include_knowledge:
+    #         knowledge_results = self.query_knowledge_base(query)
+    #         retrieval_context["knowledge_results"] = knowledge_results
+        
+    #     if include_metrics and (is_metrics_query or not include_knowledge):
+    #         metrics_results = self.query_metrics(db, query)
+    #         retrieval_context["metrics_results"] = metrics_results
+        
+    #     if include_summaries:
+    #         summary_results = self.query_chat_summaries(db, query)
+    #         retrieval_context["summary_results"] = summary_results
+        
+    #     # Determine how to handle the query based on retrieved information
+    #     if is_metrics_query and retrieval_context["metrics_results"]:
+    #         # Format metrics for context
+    #         metrics_context = format_metrics_for_context(retrieval_context["metrics_results"])
+            
+    #         # Generate response focused on metrics
+    #         response = answer_with_metrics(query, metrics_context)
+    #     else:
+    #         # Combine all retrieval results into a single context
+    #         combined_context = self._combine_contexts(retrieval_context)
+            
+    #         # Generate response with the combined context
+    #         response = generate_response(query, context=combined_context)
+        
+    #     return response, retrieval_context
+
+
     def retrieve_and_generate(
         self, 
         db: Session,
@@ -118,7 +181,7 @@ class RetrievalEngine:
         include_summaries: bool = True
     ) -> Tuple[str, Dict[str, Any]]:
         """
-        Retrieve information and generate a response.
+        Retrieve information and generate a response with improved context handling.
         
         Args:
             db: Database session
@@ -142,10 +205,19 @@ class RetrievalEngine:
         # Check if the query is metrics-related
         is_metrics_query = self._is_metrics_related(query)
         
-        # Retrieve information from different sources
+        # Retrieve information from different sources with improved top_k for better recall
         if include_knowledge:
-            knowledge_results = self.query_knowledge_base(query)
-            retrieval_context["knowledge_results"] = knowledge_results
+            # Increase top_k to get more potential matches
+            knowledge_results = self.query_knowledge_base(query, top_k=8)
+            
+            # Filter for more relevant results using a threshold
+            filtered_results = [
+                r for r in knowledge_results 
+                if r.get("relevance_score", 0) >= 0.6  # Adjust threshold as needed
+            ]
+            
+            # Take the top 5 most relevant results if we have more than that
+            retrieval_context["knowledge_results"] = filtered_results[:5] if len(filtered_results) > 5 else filtered_results
         
         if include_metrics and (is_metrics_query or not include_knowledge):
             metrics_results = self.query_metrics(db, query)
@@ -255,9 +327,49 @@ class RetrievalEngine:
             "metadata": metadata
         }
     
+    # def _combine_contexts(self, retrieval_context: Dict[str, Any]) -> str:
+    #     """
+    #     Combine different retrieval contexts into a single context string.
+        
+    #     Args:
+    #         retrieval_context: Dictionary with different retrieval results
+        
+    #     Returns:
+    #         Combined context as a string
+    #     """
+    #     parts = []
+        
+    #     # Add knowledge base results
+    #     if retrieval_context["knowledge_results"]:
+    #         knowledge_texts = []
+    #         for i, result in enumerate(retrieval_context["knowledge_results"], 1):
+    #             knowledge_texts.append(f"Document {i}:\n{result['content']}")
+            
+    #         parts.append("KNOWLEDGE BASE INFORMATION:\n" + "\n\n".join(knowledge_texts))
+        
+    #     # Add metrics results
+    #     if retrieval_context["metrics_results"]:
+    #         metrics_context = format_metrics_for_context(retrieval_context["metrics_results"])
+    #         parts.append("COMPANY METRICS:\n" + metrics_context)
+        
+    #     # Add chat summary results
+    #     if retrieval_context["summary_results"]:
+    #         summary_texts = []
+    #         for i, result in enumerate(retrieval_context["summary_results"], 1):
+    #             summary_texts.append(f"Summary {i} - {result['title']}:\n{result['summary']}")
+            
+    #         parts.append("RECENT DISCUSSIONS:\n" + "\n\n".join(summary_texts))
+        
+    #     # Combine all parts
+    #     if parts:
+    #         return "\n\n".join(parts)
+    #     else:
+    #         return "No relevant information found in the company knowledge base."
+
+
     def _combine_contexts(self, retrieval_context: Dict[str, Any]) -> str:
         """
-        Combine different retrieval contexts into a single context string.
+        Combine different retrieval contexts into a single context string with improved formatting.
         
         Args:
             retrieval_context: Dictionary with different retrieval results
@@ -271,7 +383,12 @@ class RetrievalEngine:
         if retrieval_context["knowledge_results"]:
             knowledge_texts = []
             for i, result in enumerate(retrieval_context["knowledge_results"], 1):
-                knowledge_texts.append(f"Document {i}:\n{result['content']}")
+                # Include metadata source if available for better traceability
+                source_info = ""
+                if "metadata" in result and "source" in result["metadata"]:
+                    source_info = f" (Source: {result['metadata']['source']})"
+                    
+                knowledge_texts.append(f"Document {i}{source_info}:\n{result['content']}")
             
             parts.append("KNOWLEDGE BASE INFORMATION:\n" + "\n\n".join(knowledge_texts))
         
@@ -284,16 +401,22 @@ class RetrievalEngine:
         if retrieval_context["summary_results"]:
             summary_texts = []
             for i, result in enumerate(retrieval_context["summary_results"], 1):
-                summary_texts.append(f"Summary {i} - {result['title']}:\n{result['summary']}")
+                timestamp = ""
+                if "timestamp" in result:
+                    try:
+                        timestamp = f" ({result['timestamp'].split('T')[0]})"
+                    except:
+                        pass
+                        
+                summary_texts.append(f"Summary {i} - {result['title']}{timestamp}:\n{result['summary']}")
             
             parts.append("RECENT DISCUSSIONS:\n" + "\n\n".join(summary_texts))
         
         # Combine all parts
         if parts:
-            return "\n\n".join(parts)
+            return "\n\n" + "\n\n".join(parts) + "\n\n"
         else:
             return "No relevant information found in the company knowledge base."
-
 
 # Create a global instance for use in API endpoints
 retrieval_engine = RetrievalEngine()
