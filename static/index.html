@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marketing Knowledge Base</title>
+    <!-- Link to the main stylesheet with correct path -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- Add a modern font from Google -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header section -->
+        <header class="app-header">
+            <h1>Marketing Knowledge Base</h1>
+            <p class="subtitle">Ask questions about company information, metrics, and insights</p>
+        </header>
+
+        <!-- Main content area -->
+        <main class="main-content">
+            <!-- Chat interface container -->
+            <div class="chat-container">
+                <!-- Messages will be displayed here -->
+                <div id="chat-messages" class="chat-messages"></div>
+
+                <!-- Loading indicator -->
+                <div id="loading-indicator" class="loading-indicator">
+                    <div class="loading-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+
+                <!-- Chat input area -->
+                <div class="chat-input-container">
+                    <textarea 
+                        id="chat-input" 
+                        class="chat-input" 
+                        placeholder="Ask a question about company information..."
+                        rows="1"
+                    ></textarea>
+                    <button id="send-button" class="send-button">
+                        Send
+                    </button>
+                </div>
+            </div>
+
+            <!-- Options panel (hidden by default, can be expanded later) -->
+            <div class="options-panel" id="options-panel">
+                <div class="options-header">
+                    <h3>Chat Options</h3>
+                    <button id="toggle-options" class="toggle-button">⚙️</button>
+                </div>
+                <div class="options-content" id="options-content">
+                    <div class="option-item">
+                        <label for="include-context">
+                            <input type="checkbox" id="include-context"> Include context
+                        </label>
+                    </div>
+                    <div class="option-item">
+                        <label for="include-evaluation">
+                            <input type="checkbox" id="include-evaluation"> Include evaluation
+                        </label>
+                    </div>
+                    <div class="option-item">
+                        <label for="stream-response">
+                            <input type="checkbox" id="stream-response" checked> Stream response
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer section -->
+        <footer class="app-footer">
+            <p>Powered by the Marketing Knowledge Base API</p>
+        </footer>
+    </div>
+
+    <!-- Load JavaScript files with correct paths -->
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/ui.js"></script>
+    <script src="/static/js/chat.js"></script>
+</body>
+</html>

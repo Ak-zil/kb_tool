@@ -52,6 +52,7 @@ class RetrievalEngine:
         try:
             # Extract structured query using LLM
             metrics_query = extract_metrics_query(query)
+
             
             # Parse the structured query
             try:
@@ -71,6 +72,7 @@ class RetrievalEngine:
             results = []
             
             if category:
+
                 metrics = get_metrics(db, category=category)
                 results.extend(metrics)
             
@@ -79,10 +81,11 @@ class RetrievalEngine:
                 metrics = get_metrics(db, name=metric_name)
                 results.extend(metrics)
             
+            
             # If no specific queries matched, return recent metrics
             if not results:
                 results = get_metrics(db, limit=10)
-            
+
             return [self._format_metric(metric) for metric in results]
             
         except Exception as e:
@@ -222,6 +225,7 @@ class RetrievalEngine:
         if include_metrics and (is_metrics_query or not include_knowledge):
             metrics_results = self.query_metrics(db, query)
             retrieval_context["metrics_results"] = metrics_results
+           
         
         if include_summaries:
             summary_results = self.query_chat_summaries(db, query)
@@ -231,9 +235,10 @@ class RetrievalEngine:
         if is_metrics_query and retrieval_context["metrics_results"]:
             # Format metrics for context
             metrics_context = format_metrics_for_context(retrieval_context["metrics_results"])
-            
+
             # Generate response focused on metrics
             response = answer_with_metrics(query, metrics_context)
+
         else:
             # Combine all retrieval results into a single context
             combined_context = self._combine_contexts(retrieval_context)
@@ -275,7 +280,7 @@ class RetrievalEngine:
         """
         # Parse metadata if available
         metadata = {}
-        if metric.metadata:
+        if metric.metric_metadata:
             try:
                 metadata = json.loads(metric.metadata)
             except json.JSONDecodeError:

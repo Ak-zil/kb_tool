@@ -193,6 +193,9 @@ def generate_response(
         response = llm(messages)
         return response.content
     
+    print("context")
+    print(context)
+
     if context:
         # Use RAG prompt with context
         prompt = create_rag_prompt()
@@ -260,10 +263,13 @@ def answer_with_metrics(user_query: str, metrics_context: str) -> str:
     
     prompt = create_metrics_query_prompt()
     chain = LLMChain(llm=llm, prompt=prompt)
+
+
     
     response = chain.run(
         question=user_query,
         metrics_context=metrics_context
     )
-    
+    print("prompt")
+    print(response)
     return response

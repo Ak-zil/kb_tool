@@ -81,6 +81,7 @@ async def chat_message(request: ChatRequest, db: Session = Depends(get_db)):
             include_metrics=True,
             include_summaries=True
         )
+
         
         # Create response object
         chat_response = ChatResponse(
@@ -169,6 +170,9 @@ async def stream_chat_message(request: ChatRequest, db: Session = Depends(get_db
         
         combined_context = "\n\n".join(context_texts)
         
+        print("retrirval context")
+        print(retrieval_context)
+
         # Define the generator for streaming
         async def response_generator():
             # Import here to avoid circular imports
