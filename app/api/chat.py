@@ -125,6 +125,82 @@ async def chat_message(request: ChatRequest, db: Session = Depends(get_db)):
         )
 
 
+# @router.post("/stream", tags=["chat"])
+# async def stream_chat_message(request: ChatRequest, db: Session = Depends(get_db)):
+#     """
+#     Stream a chat response.
+    
+#     Args:
+#         request: Chat request with messages and options
+#         db: Database session
+    
+#     Returns:
+#         Streaming response with generated text
+#     """
+#     if not request.stream:
+#         # If streaming is not requested, use the regular endpoint
+#         return await chat_message(request, db)
+    
+#     logger.info("Received streaming chat message request")
+    
+#     try:
+#         # Get the latest user message
+#         user_messages = [m for m in request.messages if m.role.lower() == "user"]
+#         if not user_messages:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="No user message found in the request"
+#             )
+        
+#         latest_message = user_messages[-1].content
+        
+#         # Process the query through the retrieval engine to get context
+#         # For streaming, we'll generate the response separately
+#         _, retrieval_context = retrieval_engine.retrieve_and_generate(
+#             db=db,
+#             query=latest_message,
+#             include_knowledge=True,
+#             include_metrics=True,
+#             include_summaries=True
+#         )
+        
+#         # Extract and combine relevant context
+#         knowledge_docs = retrieval_context.get("knowledge_results", [])
+#         context_texts = [doc.get("content", "") for doc in knowledge_docs if "content" in doc]
+        
+#         combined_context = "\n\n".join(context_texts)
+        
+#         print("retrirval context")
+#         print(retrieval_context)
+
+#         # Define the generator for streaming
+#         async def response_generator():
+#             # Import here to avoid circular imports
+#             from app.core.llm import generate_response
+            
+#             # Generate streaming response
+#             for token in generate_response(
+#                 question=latest_message,
+#                 context=combined_context,
+#                 streaming=True
+#             ):
+#                 yield f"data: {token}\n\n"
+        
+#         logger.info("Streaming chat response initiated")
+#         return StreamingResponse(
+#             response_generator(),
+#             media_type="text/event-stream"
+#         )
+        
+#     except Exception as e:
+#         logger.error(f"Error streaming chat response: {str(e)}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Failed to stream response: {str(e)}"
+#         )
+
+
+
 @router.post("/stream", tags=["chat"])
 async def stream_chat_message(request: ChatRequest, db: Session = Depends(get_db)):
     """
@@ -164,21 +240,19 @@ async def stream_chat_message(request: ChatRequest, db: Session = Depends(get_db
             include_summaries=True
         )
         
-        # Extract and combine relevant context
-        knowledge_docs = retrieval_context.get("knowledge_results", [])
-        context_texts = [doc.get("content", "") for doc in knowledge_docs if "content" in doc]
+        # Instead of manually extracting just knowledge documents,
+        # use the retrieval engine's context combining function
+        # which correctly formats all context types (metrics, knowledge, summaries)
+        combined_context = retrieval_engine._combine_contexts(retrieval_context)
         
-        combined_context = "\n\n".join(context_texts)
-        
-        print("retrirval context")
-        print(retrieval_context)
+        logger.info("Prepared complete context for streaming response")
 
         # Define the generator for streaming
         async def response_generator():
             # Import here to avoid circular imports
             from app.core.llm import generate_response
             
-            # Generate streaming response
+            # Generate streaming response with the complete context
             for token in generate_response(
                 question=latest_message,
                 context=combined_context,

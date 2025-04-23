@@ -11,9 +11,62 @@ from collections import defaultdict
 logger = logging.getLogger(__name__)
 
 
+# def format_metrics_for_context(metrics: List[Dict[str, Any]]) -> str:
+#     """
+#     Format metrics data into a readable context string for the LLM.
+    
+#     Args:
+#         metrics: List of metric dictionaries
+    
+#     Returns:
+#         Formatted context string
+#     """
+#     if not metrics:
+#         return "No relevant metrics found."
+    
+#     # Group metrics by category
+#     categories = defaultdict(list)
+#     for metric in metrics:
+#         categories[metric["category"]].append(metric)
+    
+#     # Format each category
+#     context_parts = []
+#     for category, category_metrics in categories.items():
+#         context_parts.append(f"## {category.upper()} METRICS:")
+        
+#         # Group by subcategory if available
+#         subcategories = defaultdict(list)
+#         for metric in category_metrics:
+#             subcategory = metric.get("subcategory") or "General"
+#             subcategories[subcategory].append(metric)
+        
+#         for subcategory, subcategory_metrics in subcategories.items():
+#             if subcategory != "General":
+#                 context_parts.append(f"\n### {subcategory}:")
+            
+#             # Format each metric
+#             for metric in subcategory_metrics:
+#                 date_str = ""
+#                 if "timestamp" in metric:
+#                     try:
+#                         dt = datetime.fromisoformat(metric["timestamp"])
+#                         date_str = f" (as of {dt.strftime('%B %d, %Y')})"
+#                     except (ValueError, TypeError):
+#                         pass
+                
+#                 value_str = format_metric_value(metric["value"], metric.get("unit", ""))
+#                 description = f": {metric['description']}" if metric.get("description") else ""
+                
+#                 context_parts.append(f"- {metric['name']}: {value_str}{date_str}{description}")
+            
+#             context_parts.append("")  # Add blank line between subcategories
+    
+#     return "\n".join(context_parts)
+
 def format_metrics_for_context(metrics: List[Dict[str, Any]]) -> str:
     """
     Format metrics data into a readable context string for the LLM.
+    Fixes timestamp interpretation issues.
     
     Args:
         metrics: List of metric dictionaries
@@ -46,22 +99,93 @@ def format_metrics_for_context(metrics: List[Dict[str, Any]]) -> str:
             
             # Format each metric
             for metric in subcategory_metrics:
-                date_str = ""
-                if "timestamp" in metric:
-                    try:
-                        dt = datetime.fromisoformat(metric["timestamp"])
-                        date_str = f" (as of {dt.strftime('%B %d, %Y')})"
-                    except (ValueError, TypeError):
-                        pass
-                
                 value_str = format_metric_value(metric["value"], metric.get("unit", ""))
-                description = f": {metric['description']}" if metric.get("description") else ""
                 
-                context_parts.append(f"- {metric['name']}: {value_str}{date_str}{description}")
+                # Format the description, removing any confusion with timestamps
+                # If the description contains the word "in" followed by a year, we want to keep this clear
+                description = ""
+                if metric.get("description"):
+                    description = f" - {metric['description']}"
+                
+                # Don't include timestamp information to avoid confusion
+                # The timestamp is when the metric was recorded, not what the metric is about
+                # If the description has date info like "in 2024", that will still be shown
+                
+                context_parts.append(f"- {metric['name']}: {value_str}{description}")
             
             context_parts.append("")  # Add blank line between subcategories
     
     return "\n".join(context_parts)
+
+
+# def get_metrics_summary(metrics: List[Dict[str, Any]], top_n: int = 5) -> str:
+#     """
+#     Generate a summary of the most important metrics.
+#     Modified to avoid timestamp confusion.
+    
+#     Args:
+#         metrics: List of metric dictionaries
+#         top_n: Number of top metrics to include
+    
+#     Returns:
+#         Summary string
+#     """
+#     if not metrics:
+#         return "No metrics available."
+    
+#     # For simplicity, just take the first top_n metrics
+#     # In a real implementation, you would prioritize metrics by importance
+#     top_metrics = metrics[:min(top_n, len(metrics))]
+    
+#     summary_parts = ["Key Company Metrics:"]
+#     for metric in top_metrics:
+#         value_str = format_metric_value(metric["value"], metric.get("unit", ""))
+        
+#         # Use the description if available, removing any confusion with timestamps
+#         description = ""
+#         if metric.get("description"):
+#             description = f" - {metric['description']}"
+        
+#         # Don't include timestamp information to avoid confusion
+        
+#         summary_parts.append(f"- {metric['name']}: {value_str}{description}")
+    
+#     return "\n".join(summary_parts)
+
+
+def get_metrics_summary(metrics: List[Dict[str, Any]], top_n: int = 5) -> str:
+    """
+    Generate a summary of the most important metrics.
+    Modified to avoid timestamp confusion.
+    
+    Args:
+        metrics: List of metric dictionaries
+        top_n: Number of top metrics to include
+    
+    Returns:
+        Summary string
+    """
+    if not metrics:
+        return "No metrics available."
+    
+    # For simplicity, just take the first top_n metrics
+    # In a real implementation, you would prioritize metrics by importance
+    top_metrics = metrics[:min(top_n, len(metrics))]
+    
+    summary_parts = ["Key Company Metrics:"]
+    for metric in top_metrics:
+        value_str = format_metric_value(metric["value"], metric.get("unit", ""))
+        
+        # Use the description if available, removing any confusion with timestamps
+        description = ""
+        if metric.get("description"):
+            description = f" - {metric['description']}"
+        
+        # Don't include timestamp information to avoid confusion
+        
+        summary_parts.append(f"- {metric['name']}: {value_str}{description}")
+    
+    return "\n".join(summary_parts)
 
 
 def format_metric_value(value: float, unit: Optional[str] = None) -> str:
@@ -129,35 +253,35 @@ def extract_metrics_from_text(text: str) -> List[Dict[str, Any]]:
     return []
 
 
-def get_metrics_summary(metrics: List[Dict[str, Any]], top_n: int = 5) -> str:
-    """
-    Generate a summary of the most important metrics.
+# def get_metrics_summary(metrics: List[Dict[str, Any]], top_n: int = 5) -> str:
+#     """
+#     Generate a summary of the most important metrics.
     
-    Args:
-        metrics: List of metric dictionaries
-        top_n: Number of top metrics to include
+#     Args:
+#         metrics: List of metric dictionaries
+#         top_n: Number of top metrics to include
     
-    Returns:
-        Summary string
-    """
-    if not metrics:
-        return "No metrics available."
+#     Returns:
+#         Summary string
+#     """
+#     if not metrics:
+#         return "No metrics available."
     
-    # For simplicity, just take the first top_n metrics
-    # In a real implementation, you would prioritize metrics by importance
-    top_metrics = metrics[:min(top_n, len(metrics))]
+#     # For simplicity, just take the first top_n metrics
+#     # In a real implementation, you would prioritize metrics by importance
+#     top_metrics = metrics[:min(top_n, len(metrics))]
     
-    summary_parts = ["Key Company Metrics:"]
-    for metric in top_metrics:
-        value_str = format_metric_value(metric["value"], metric.get("unit", ""))
-        date_str = ""
-        if "timestamp" in metric:
-            try:
-                dt = datetime.fromisoformat(metric["timestamp"])
-                date_str = f" (as of {dt.strftime('%B %Y')})"
-            except (ValueError, TypeError):
-                pass
+#     summary_parts = ["Key Company Metrics:"]
+#     for metric in top_metrics:
+#         value_str = format_metric_value(metric["value"], metric.get("unit", ""))
+#         date_str = ""
+#         if "timestamp" in metric:
+#             try:
+#                 dt = datetime.fromisoformat(metric["timestamp"])
+#                 date_str = f" (as of {dt.strftime('%B %Y')})"
+#             except (ValueError, TypeError):
+#                 pass
         
-        summary_parts.append(f"- {metric['name']}: {value_str}{date_str}")
+#         summary_parts.append(f"- {metric['name']}: {value_str}{date_str}")
     
-    return "\n".join(summary_parts)
+#     return "\n".join(summary_parts)
