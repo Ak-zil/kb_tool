@@ -248,9 +248,31 @@ class RetrievalEngine:
         
         return response, retrieval_context
     
+    # def _is_metrics_related(self, query: str) -> bool:
+    #     """
+    #     Check if the query is related to metrics or figures.
+        
+    #     Args:
+    #         query: User's query
+        
+    #     Returns:
+    #         Boolean indicating if query is metrics-related
+    #     """
+    #     metrics_keywords = [
+    #         "metric", "figure", "statistic", "number", "percent", "growth",
+    #         "sales", "revenue", "profit", "customer", "user", "acquisition",
+    #         "churn", "retention", "conversion", "engagement", "roi", "roas",
+    #         "how many", "how much", "rate", "ratio", "average", "mean", "median"
+    #     ]
+        
+    #     lower_query = query.lower()
+    #     return any(keyword in lower_query for keyword in metrics_keywords)
+
+
     def _is_metrics_related(self, query: str) -> bool:
         """
         Check if the query is related to metrics or figures.
+        Improved to prevent false positives for common terms.
         
         Args:
             query: User's query
@@ -258,15 +280,44 @@ class RetrievalEngine:
         Returns:
             Boolean indicating if query is metrics-related
         """
-        metrics_keywords = [
-            "metric", "figure", "statistic", "number", "percent", "growth",
-            "sales", "revenue", "profit", "customer", "user", "acquisition",
-            "churn", "retention", "conversion", "engagement", "roi", "roas",
-            "how many", "how much", "rate", "ratio", "average", "mean", "median"
+        # Specific metrics-focused phrases that strongly indicate a metrics query
+        strong_indicators = [
+            "metric", "figure", "statistic", "number", "percent", "growth rate",
+            "how many", "how much", "average", "mean", "median",
+            "roi", "roas", "kpi", "performance indicator"
         ]
         
+        # Check for strong indicators first
         lower_query = query.lower()
-        return any(keyword in lower_query for keyword in metrics_keywords)
+        if any(indicator in lower_query for indicator in strong_indicators):
+            return True
+        
+        # Business metrics - only count these if in a metrics context
+        context_dependent = [
+            "sales", "revenue", "profit", "customer", "acquisition",
+            "churn", "retention", "conversion", "engagement"
+        ]
+        
+        # Context terms that make these more likely to be metrics queries
+        metrics_context = ["rate", "percentage", "total", "measure", "track", "monitor", "report"]
+        
+        # Check for business metrics in a metrics context
+        for term in context_dependent:
+            if term in lower_query:
+                # Check if it's in a metrics context
+                for context in metrics_context:
+                    if context in lower_query:
+                        return True
+        
+        # Special case handling for "user"
+        # "user" alone shouldn't trigger metrics, but "user count", "user growth" should
+        if "user" in lower_query:
+            metrics_user_contexts = ["count", "growth", "number of", "total", "active", "monthly", "daily"]
+            return any(context in lower_query for context in metrics_user_contexts)
+        
+        # By default, assume it's not metrics-related
+        return False
+    
     
     def _format_metric(self, metric) -> Dict[str, Any]:
         """
@@ -423,10 +474,79 @@ class RetrievalEngine:
     #     else:
     #         return "No relevant information found in the company knowledge base."
 
+    # def _combine_contexts(self, retrieval_context: Dict[str, Any]) -> str:
+    #     """
+    #     Combine different retrieval contexts into a single context string with improved formatting.
+    #     Prevents duplication and incorrect categorization.
+        
+    #     Args:
+    #         retrieval_context: Dictionary with different retrieval results
+        
+    #     Returns:
+    #         Combined context as a string
+    #     """
+    #     parts = []
+    
+    #     # Add knowledge base results
+    #     if retrieval_context["knowledge_results"]:
+    #         knowledge_texts = []
+    #         for i, result in enumerate(retrieval_context["knowledge_results"], 1):
+    #             # Include metadata source if available for better traceability
+    #             source_info = ""
+    #             if "metadata" in result and "source" in result["metadata"]:
+    #                 source_info = f" (Source: {result['metadata']['source']})"
+                    
+    #             # Clean the content to remove any metric-like patterns
+    #             content = result['content']
+    #             # Remove any lines that appear to be metrics markers
+    #             content = self._clean_knowledge_content(content)
+                
+    #             knowledge_texts.append(f"Document {i}{source_info}:\n{content}")
+            
+    #         parts.append("KNOWLEDGE BASE INFORMATION:\n" + "\n\n".join(knowledge_texts))
+        
+    #     # Add metrics results
+    #     if retrieval_context["metrics_results"]:
+    #         # Deduplicate metrics by creating a dictionary with name+category as key
+    #         unique_metrics = {}
+    #         for metric in retrieval_context["metrics_results"]:
+    #             key = f"{metric.get('name', '')}-{metric.get('category', '')}"
+    #             unique_metrics[key] = metric
+            
+    #         # Format the deduplicated metrics
+    #         from app.core.metrics_engine import format_metrics_for_context
+    #         metrics_context = format_metrics_for_context(list(unique_metrics.values()))
+            
+    #         # Only add if there are actual metrics (not just headers)
+    #         if metrics_context and "No relevant metrics found" not in metrics_context:
+    #             parts.append("COMPANY METRICS:\n" + metrics_context)
+    
+    #     # Add chat summary results
+    #     if retrieval_context["summary_results"]:
+    #         summary_texts = []
+    #         for i, result in enumerate(retrieval_context["summary_results"], 1):
+    #             timestamp = ""
+    #             if "timestamp" in result:
+    #                 try:
+    #                     timestamp = f" ({result['timestamp'].split('T')[0]})"
+    #                 except:
+    #                     pass
+                        
+    #             summary_texts.append(f"Summary {i} - {result['title']}{timestamp}:\n{result['summary']}")
+            
+    #         parts.append("RECENT DISCUSSIONS:\n" + "\n\n".join(summary_texts))
+        
+    #     # Combine all parts with clear separation
+    #     if parts:
+    #         return "\n\n" + "\n\n".join(parts) + "\n\n"
+    #     else:
+    #         return "No relevant information found in the company knowledge base."
+
+
     def _combine_contexts(self, retrieval_context: Dict[str, Any]) -> str:
         """
-        Combine different retrieval contexts into a single context string with improved formatting.
-        Prevents duplication and incorrect categorization.
+        Combine different retrieval contexts into a single context string with improved prioritization.
+        Ensures knowledge base results are properly highlighted.
         
         Args:
             retrieval_context: Dictionary with different retrieval results
@@ -435,8 +555,9 @@ class RetrievalEngine:
             Combined context as a string
         """
         parts = []
-    
-        # Add knowledge base results
+        has_content = False
+        
+        # Add knowledge base results first and with more prominence
         if retrieval_context["knowledge_results"]:
             knowledge_texts = []
             for i, result in enumerate(retrieval_context["knowledge_results"], 1):
@@ -453,6 +574,7 @@ class RetrievalEngine:
                 knowledge_texts.append(f"Document {i}{source_info}:\n{content}")
             
             parts.append("KNOWLEDGE BASE INFORMATION:\n" + "\n\n".join(knowledge_texts))
+            has_content = True
         
         # Add metrics results
         if retrieval_context["metrics_results"]:
@@ -463,13 +585,13 @@ class RetrievalEngine:
                 unique_metrics[key] = metric
             
             # Format the deduplicated metrics
-            from app.core.metrics_engine import format_metrics_for_context
             metrics_context = format_metrics_for_context(list(unique_metrics.values()))
             
             # Only add if there are actual metrics (not just headers)
             if metrics_context and "No relevant metrics found" not in metrics_context:
                 parts.append("COMPANY METRICS:\n" + metrics_context)
-    
+                has_content = True
+        
         # Add chat summary results
         if retrieval_context["summary_results"]:
             summary_texts = []
@@ -484,12 +606,13 @@ class RetrievalEngine:
                 summary_texts.append(f"Summary {i} - {result['title']}{timestamp}:\n{result['summary']}")
             
             parts.append("RECENT DISCUSSIONS:\n" + "\n\n".join(summary_texts))
+            has_content = True
         
         # Combine all parts with clear separation
         if parts:
             return "\n\n" + "\n\n".join(parts) + "\n\n"
         else:
-            return "No relevant information found in the company knowledge base."
+            return "No specific information found in the company knowledge base about this query. Please try to rephrase your question or ask about a different topic."
 
     def _clean_knowledge_content(self, content: str) -> str:
         """
