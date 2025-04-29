@@ -35,3 +35,5 @@ httpx>=0.24.1
 # Evaluation
 ragas>=0.0.18
 evaluate>=0.4.0
+
+boto3>=1.38.3

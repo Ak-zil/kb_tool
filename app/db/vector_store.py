@@ -502,6 +502,7 @@ def clear_vector_store():
     
     vector_store = get_vector_store()
     vector_store.delete_collection()
+    get_vector_store.cache_clear()
     vector_store = get_vector_store()  # Recreate the collection
     
     logger.info("Vector store cleared")
