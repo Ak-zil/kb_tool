@@ -19,7 +19,7 @@ from app.api.metrics import router as metrics_router
 from app.api.guidelines import router as guidelines_router  # Import the guidelines router
 from app.db.vector_store import get_vector_store
 from app.db.metrics_db import init_db, get_db
-from app.db.guidelines_db import init_guidelines_db  # Import guidelines DB initialization
+from app.db.guidelines_db import init_guidelines_db, get_guideline_with_sections  # Import guidelines DB initialization
 
 # Configure logging
 logging.basicConfig(

@@ -31,17 +31,45 @@ class Guideline(Base):
     department = Column(String(100), index=True, nullable=False)
     subcategory = Column(String(100), index=True, nullable=True)
     description = Column(Text, nullable=True)
-    content = Column(Text, nullable=True)
+    content = Column(Text, nullable=True)  # Extracted content for text-only guidelines
+    external_source_url = Column(String(255), nullable=True)  # Optional link to an external resource
     source_url = Column(String(255), nullable=True)  # URL to access the source document
     source_s3_key = Column(String(255), nullable=True)  # S3 key for the source document
     source_content_type = Column(String(100), nullable=True)  # MIME type of source document
-    has_assets = Column(Boolean, default=False)
+    is_text_only = Column(Boolean, default=True)  # Flag to indicate if this is a text-only guideline
+    is_processed = Column(Boolean, default=False)  # Flag to indicate if text-only document has been processed
+    has_assets = Column(Boolean, default=False)  # If guideline has direct assets
+    has_sections = Column(Boolean, default=False)  # If guideline has sections
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     meta_data = Column(Text, nullable=True)  # JSON string for additional data
     
     # Relationship with assets
     assets = relationship("GuidelineAsset", back_populates="guideline", cascade="all, delete-orphan")
+    
+    # Relationship with sections
+    sections = relationship("GuidelineSection", back_populates="guideline", cascade="all, delete-orphan")
+
+
+class GuidelineSection(Base):
+    """Database model for guideline sections."""
+    __tablename__ = "guideline_sections"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    guideline_id = Column(Integer, ForeignKey("guidelines.id"), nullable=False)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=True)  # Text content of the section
+    order = Column(Integer, default=0)  # For ordering sections within a guideline
+    has_assets = Column(Boolean, default=False)  # Flag to indicate if section has assets
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    meta_data = Column(Text, nullable=True)  # JSON string for additional data
+    
+    # Relationship with guideline
+    guideline = relationship("Guideline", back_populates="sections")
+    
+    # Relationship with section assets
+    assets = relationship("SectionAsset", back_populates="section", cascade="all, delete-orphan")
 
 
 class GuidelineAsset(Base):
@@ -61,6 +89,25 @@ class GuidelineAsset(Base):
     
     # Relationship with guideline
     guideline = relationship("Guideline", back_populates="assets")
+
+
+class SectionAsset(Base):
+    """Database model for section-specific assets."""
+    __tablename__ = "section_assets"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("guideline_sections.id"), nullable=False)
+    asset_type = Column(String(50), index=True, nullable=False)  # e.g., "image", "pdf", etc.
+    title = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    s3_key = Column(String(255), nullable=False)  # S3 object key
+    content_type = Column(String(100), nullable=True)  # MIME type
+    order = Column(Integer, default=0)  # For ordering assets
+    created_at = Column(DateTime, default=datetime.utcnow)
+    meta_data = Column(Text, nullable=True)  # JSON string for additional data
+    
+    # Relationship with section
+    section = relationship("GuidelineSection", back_populates="assets")
 
 
 def init_guidelines_db():
@@ -88,7 +135,17 @@ def create_guideline(db: Session, guideline_data: Dict[str, Any]) -> Guideline:
         guideline_data["meta_data"] = json.dumps(guideline_data["metadata"])
         del guideline_data["metadata"]
     
-    db_guideline = Guideline(**guideline_data)
+    # Create a dictionary with only the fields that exist in the model
+    valid_fields = {
+        "title", "department", "subcategory", "description", "content", 
+        "external_source_url", "source_url", "source_s3_key", "source_content_type", 
+        "is_text_only", "is_processed", "has_assets", "has_sections", "meta_data"
+    }
+    
+    filtered_data = {k: v for k, v in guideline_data.items() if k in valid_fields}
+    
+    # Create the guideline
+    db_guideline = Guideline(**filtered_data)
     db.add(db_guideline)
     db.commit()
     db.refresh(db_guideline)
@@ -100,6 +157,7 @@ def get_guidelines(
     department: Optional[str] = None,
     subcategory: Optional[str] = None,
     title: Optional[str] = None,
+    is_text_only: Optional[bool] = None,
     limit: int = 100,
     skip: int = 0
 ) -> List[Guideline]:
@@ -111,6 +169,7 @@ def get_guidelines(
         department: Filter by department
         subcategory: Filter by subcategory
         title: Filter by title (partial match)
+        is_text_only: Filter by whether guideline is text-only
         limit: Maximum number of results
         skip: Number of results to skip
     
@@ -125,6 +184,8 @@ def get_guidelines(
         query = query.filter(Guideline.subcategory == subcategory)
     if title:
         query = query.filter(Guideline.title.like(f"%{title}%"))
+    if is_text_only is not None:
+        query = query.filter(Guideline.is_text_only == is_text_only)
     
     return query.order_by(Guideline.department, Guideline.subcategory, Guideline.title).offset(skip).limit(limit).all()
 
@@ -164,10 +225,18 @@ def update_guideline(db: Session, guideline_id: int, guideline_data: Dict[str, A
         guideline_data["meta_data"] = json.dumps(guideline_data["metadata"])
         del guideline_data["metadata"]
     
+    # Create a dictionary with only the fields that exist in the model
+    valid_fields = {
+        "title", "department", "subcategory", "description", "content", 
+        "external_source_url", "source_url", "source_s3_key", "source_content_type", 
+        "is_text_only", "is_processed", "has_assets", "has_sections", "meta_data"
+    }
+    
+    filtered_data = {k: v for k, v in guideline_data.items() if k in valid_fields}
+    
     # Update guideline attributes
-    for key, value in guideline_data.items():
-        if hasattr(db_guideline, key):
-            setattr(db_guideline, key, value)
+    for key, value in filtered_data.items():
+        setattr(db_guideline, key, value)
     
     db.commit()
     db.refresh(db_guideline)
@@ -191,6 +260,139 @@ def delete_guideline(db: Session, guideline_id: int) -> bool:
     
     db.delete(db_guideline)
     db.commit()
+    return True
+
+
+# CRUD operations for guideline sections
+
+def create_guideline_section(db: Session, section_data: Dict[str, Any]) -> GuidelineSection:
+    """
+    Create a new guideline section in the database.
+    
+    Args:
+        db: Database session
+        section_data: Dictionary containing section data
+    
+    Returns:
+        Created section instance
+    """
+    # Handle metadata if provided
+    if "metadata" in section_data and isinstance(section_data["metadata"], dict):
+        section_data["meta_data"] = json.dumps(section_data["metadata"])
+        del section_data["metadata"]
+    
+    db_section = GuidelineSection(**section_data)
+    db.add(db_section)
+    db.commit()
+    db.refresh(db_section)
+    
+    # Update the has_sections flag on the parent guideline
+    guideline = get_guideline_by_id(db, db_section.guideline_id)
+    if guideline and not guideline.has_sections:
+        guideline.has_sections = True
+        guideline.is_text_only = False  # If it has sections, it's not text-only
+        db.commit()
+    
+    return db_section
+
+
+def get_guideline_sections(
+    db: Session, 
+    guideline_id: int,
+    limit: int = 100,
+    skip: int = 0
+) -> List[GuidelineSection]:
+    """
+    Get sections for a specific guideline.
+    
+    Args:
+        db: Database session
+        guideline_id: Guideline ID
+        limit: Maximum number of results
+        skip: Number of results to skip
+    
+    Returns:
+        List of sections
+    """
+    return db.query(GuidelineSection).filter(
+        GuidelineSection.guideline_id == guideline_id
+    ).order_by(GuidelineSection.order, GuidelineSection.id).offset(skip).limit(limit).all()
+
+
+def get_section_by_id(db: Session, section_id: int) -> Optional[GuidelineSection]:
+    """
+    Get a section by its ID.
+    
+    Args:
+        db: Database session
+        section_id: Section ID
+    
+    Returns:
+        Section instance or None if not found
+    """
+    return db.query(GuidelineSection).filter(GuidelineSection.id == section_id).first()
+
+
+def update_section(db: Session, section_id: int, section_data: Dict[str, Any]) -> Optional[GuidelineSection]:
+    """
+    Update a section in the database.
+    
+    Args:
+        db: Database session
+        section_id: Section ID
+        section_data: Dictionary containing updated section data
+    
+    Returns:
+        Updated section instance or None if not found
+    """
+    db_section = get_section_by_id(db, section_id)
+    if not db_section:
+        return None
+    
+    # Handle metadata if provided
+    if "metadata" in section_data and isinstance(section_data["metadata"], dict):
+        section_data["meta_data"] = json.dumps(section_data["metadata"])
+        del section_data["metadata"]
+    
+    # Update section attributes
+    for key, value in section_data.items():
+        if hasattr(db_section, key):
+            setattr(db_section, key, value)
+    
+    db.commit()
+    db.refresh(db_section)
+    return db_section
+
+
+def delete_section(db: Session, section_id: int) -> bool:
+    """
+    Delete a section from the database.
+    
+    Args:
+        db: Database session
+        section_id: Section ID
+    
+    Returns:
+        True if deleted, False if not found
+    """
+    db_section = get_section_by_id(db, section_id)
+    if not db_section:
+        return False
+    
+    guideline_id = db_section.guideline_id
+    
+    db.delete(db_section)
+    db.commit()
+    
+    # Check if the guideline has any remaining sections
+    remaining_sections = get_guideline_sections(db, guideline_id)
+    if not remaining_sections:
+        # Update the has_sections flag on the parent guideline
+        guideline = get_guideline_by_id(db, guideline_id)
+        if guideline and guideline.has_sections:
+            guideline.has_sections = False
+            db.commit()
+    
     return True
 
 
@@ -329,6 +531,143 @@ def delete_asset(db: Session, asset_id: int) -> bool:
     return True
 
 
+# CRUD operations for section assets
+
+def create_section_asset(db: Session, asset_data: Dict[str, Any]) -> SectionAsset:
+    """
+    Create a new section asset in the database.
+    
+    Args:
+        db: Database session
+        asset_data: Dictionary containing asset data
+    
+    Returns:
+        Created asset instance
+    """
+    # Handle metadata if provided
+    if "metadata" in asset_data and isinstance(asset_data["metadata"], dict):
+        asset_data["meta_data"] = json.dumps(asset_data["metadata"])
+        del asset_data["metadata"]
+    
+    db_asset = SectionAsset(**asset_data)
+    db.add(db_asset)
+    db.commit()
+    db.refresh(db_asset)
+    
+    # Update the has_assets flag on the parent section
+    section = get_section_by_id(db, db_asset.section_id)
+    if section and not section.has_assets:
+        section.has_assets = True
+        db.commit()
+    
+    return db_asset
+
+
+def get_section_assets(
+    db: Session, 
+    section_id: int,
+    asset_type: Optional[str] = None,
+    limit: int = 100,
+    skip: int = 0
+) -> List[SectionAsset]:
+    """
+    Get assets for a specific section.
+    
+    Args:
+        db: Database session
+        section_id: Section ID
+        asset_type: Filter by asset type
+        limit: Maximum number of results
+        skip: Number of results to skip
+    
+    Returns:
+        List of assets
+    """
+    query = db.query(SectionAsset).filter(SectionAsset.section_id == section_id)
+    
+    if asset_type:
+        query = query.filter(SectionAsset.asset_type == asset_type)
+    
+    return query.order_by(SectionAsset.order, SectionAsset.id).offset(skip).limit(limit).all()
+
+
+def get_section_asset_by_id(db: Session, asset_id: int) -> Optional[SectionAsset]:
+    """
+    Get a section asset by its ID.
+    
+    Args:
+        db: Database session
+        asset_id: Asset ID
+    
+    Returns:
+        Asset instance or None if not found
+    """
+    return db.query(SectionAsset).filter(SectionAsset.id == asset_id).first()
+
+
+def update_section_asset(db: Session, asset_id: int, asset_data: Dict[str, Any]) -> Optional[SectionAsset]:
+    """
+    Update a section asset in the database.
+    
+    Args:
+        db: Database session
+        asset_id: Asset ID
+        asset_data: Dictionary containing updated asset data
+    
+    Returns:
+        Updated asset instance or None if not found
+    """
+    db_asset = get_section_asset_by_id(db, asset_id)
+    if not db_asset:
+        return None
+    
+    # Handle metadata if provided
+    if "metadata" in asset_data and isinstance(asset_data["metadata"], dict):
+        asset_data["meta_data"] = json.dumps(asset_data["metadata"])
+        del asset_data["metadata"]
+    
+    # Update asset attributes
+    for key, value in asset_data.items():
+        if hasattr(db_asset, key):
+            setattr(db_asset, key, value)
+    
+    db.commit()
+    db.refresh(db_asset)
+    return db_asset
+
+
+def delete_section_asset(db: Session, asset_id: int) -> bool:
+    """
+    Delete a section asset from the database.
+    
+    Args:
+        db: Database session
+        asset_id: Asset ID
+    
+    Returns:
+        True if deleted, False if not found
+    """
+    db_asset = get_section_asset_by_id(db, asset_id)
+    if not db_asset:
+        return False
+    
+    section_id = db_asset.section_id
+    
+    db.delete(db_asset)
+    db.commit()
+    
+    # Check if the section has any remaining assets
+    remaining_assets = get_section_assets(db, section_id)
+    if not remaining_assets:
+        # Update the has_assets flag on the parent section
+        section = get_section_by_id(db, section_id)
+        if section and section.has_assets:
+            section.has_assets = False
+            db.commit()
+    
+    return True
+
+
 def search_guidelines(
     db: Session,
     query: str,
@@ -358,3 +697,147 @@ def search_guidelines(
     ).limit(limit).all()
     
     return results
+
+
+def get_guideline_with_sections(
+    db: Session,
+    guideline_id: int
+) -> Optional[Dict[str, Any]]:
+    """
+    Get a guideline with all its sections and assets.
+    
+    Args:
+        db: Database session
+        guideline_id: Guideline ID
+    
+    Returns:
+        Dictionary containing guideline data with sections and assets, or None if not found
+    """
+    guideline = get_guideline_by_id(db, guideline_id)
+    if not guideline:
+        return None
+    
+    # Format guideline data
+    guideline_data = {
+        "id": guideline.id,
+        "title": guideline.title,
+        "department": guideline.department,
+        "subcategory": guideline.subcategory,
+        "description": guideline.description,
+        "content": guideline.content,
+        "external_source_url": guideline.external_source_url,
+        "source_url": guideline.source_url,
+        "source_content_type": guideline.source_content_type,
+        "has_source_document": bool(guideline.source_s3_key),
+        "is_text_only": guideline.is_text_only,
+        "is_processed": guideline.is_processed,
+        "has_assets": guideline.has_assets,
+        "has_sections": guideline.has_sections,
+        "created_at": guideline.created_at.isoformat(),
+        "updated_at": guideline.updated_at.isoformat(),
+        "sections": [],
+        "assets": []
+    }
+    
+    # Add sections if available
+    if guideline.has_sections:
+        sections = get_guideline_sections(db, guideline_id)
+        for section in sections:
+            section_data = {
+                "id": section.id,
+                "title": section.title,
+                "content": section.content,
+                "order": section.order,
+                "has_assets": section.has_assets,
+                "assets": []
+            }
+            
+            # Add section assets if available
+            if section.has_assets:
+                section_assets = get_section_assets(db, section.id)
+                for asset in section_assets:
+                    # Parse metadata if available
+                    metadata = {}
+                    if asset.meta_data:
+                        try:
+                            metadata = json.loads(asset.meta_data)
+                        except json.JSONDecodeError:
+                            pass
+                    
+                    section_data["assets"].append({
+                        "id": asset.id,
+                        "asset_type": asset.asset_type,
+                        "title": asset.title,
+                        "description": asset.description,
+                        "s3_key": asset.s3_key,
+                        "content_type": asset.content_type,
+                        "order": asset.order,
+                        "metadata": metadata
+                    })
+            
+            guideline_data["sections"].append(section_data)
+    
+    # Add guideline assets if available
+    if guideline.has_assets:
+        assets = get_guideline_assets(db, guideline_id)
+        for asset in assets:
+            # Parse metadata if available
+            metadata = {}
+            if asset.meta_data:
+                try:
+                    metadata = json.loads(asset.meta_data)
+                except json.JSONDecodeError:
+                    pass
+                
+            guideline_data["assets"].append({
+                "id": asset.id,
+                "asset_type": asset.asset_type,
+                "title": asset.title,
+                "description": asset.description,
+                "s3_key": asset.s3_key,
+                "content_type": asset.content_type,
+                "order": asset.order,
+                "metadata": metadata
+            })
+    
+    return guideline_data
+
+
+def mark_guideline_processed(db: Session, guideline_id: int, extracted_content: str) -> bool:
+    """
+    Mark a text-only guideline as processed and update its content with extracted text.
+    
+    Args:
+        db: Database session
+        guideline_id: Guideline ID
+        extracted_content: Extracted text content from the document
+    
+    Returns:
+        True if successful, False if guideline not found
+    """
+    guideline = get_guideline_by_id(db, guideline_id)
+    if not guideline:
+        return False
+        
+    guideline.is_processed = True
+    guideline.content = extracted_content
+    db.commit()
+    return True
+
+
+def get_unprocessed_text_guidelines(db: Session, limit: int = 10) -> List[Guideline]:
+    """
+    Get text-only guidelines that haven't been processed yet.
+    
+    Args:
+        db: Database session
+        limit: Maximum number of results
+    
+    Returns:
+        List of unprocessed guidelines
+    """
+    return db.query(Guideline).filter(
+        Guideline.is_text_only is True,
+        Guideline.is_processed is False,
+        Guideline.source_s3_key.isnot(None)
+    ).limit(limit).all()
