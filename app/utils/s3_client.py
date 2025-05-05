@@ -3,10 +3,10 @@ S3 integration for storing and retrieving guideline documents and assets.
 """
 
 import logging
-import os
 import boto3
 from botocore.exceptions import ClientError
-from typing import Optional, BinaryIO, Dict, Any, List
+from typing import Optional, BinaryIO, Dict, Any, List, Union
+import io
 
 from app.config import get_settings
 
@@ -36,7 +36,7 @@ class S3Client:
     
     def upload_file(
         self, 
-        file_obj: BinaryIO, 
+        file_obj: Union[BinaryIO, bytes], 
         object_key: str, 
         content_type: Optional[str] = None,
         metadata: Optional[Dict[str, str]] = None
@@ -45,7 +45,7 @@ class S3Client:
         Upload a file to S3.
         
         Args:
-            file_obj: File-like object to upload
+            file_obj: File-like object or bytes to upload
             object_key: S3 object key (path)
             content_type: Optional content type
             metadata: Optional metadata dictionary
@@ -61,6 +61,11 @@ class S3Client:
                 
             if metadata:
                 extra_args['Metadata'] = metadata
+            
+            # Handle both file-like objects and bytes
+            if isinstance(file_obj, bytes):
+                # Convert bytes to file-like object
+                file_obj = io.BytesIO(file_obj)
             
             self.s3.upload_fileobj(
                 file_obj,

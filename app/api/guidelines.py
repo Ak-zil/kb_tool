@@ -3,10 +3,9 @@ API endpoints for managing marketing guidelines.
 """
 
 import logging
-import os
 import json
 import mimetypes
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 
 from fastapi import (
     APIRouter, 
@@ -207,8 +206,8 @@ class SectionAssetUpdate(BaseModel):
 
 class GuidelineWithAssets(GuidelineResponse):
     """Model for guideline with its assets."""
-    assets: List[AssetResponse] = Field([], description="Associated assets")
-    sections: List[Dict[str, Any]] = Field([], description="Associated sections")
+    assets: list[AssetResponse] = Field([], description="Associated assets")
+    sections: list[Dict[str, Any]] = Field([], description="Associated sections")
 
 
 # Utility functions
@@ -429,7 +428,9 @@ async def create_guideline_endpoint(
             
             # Upload file to S3
             s3_client = get_s3_client()
+            # Read the file content
             content = await source_file.read()
+            # Upload the bytes directly
             upload_result = s3_client.upload_file(
                 file_obj=content, 
                 object_key=s3_key, 
@@ -470,7 +471,7 @@ async def create_guideline_endpoint(
         )
 
 
-@router.get("/", response_model=List[GuidelineResponse], tags=["guidelines"])
+@router.get("/", response_model=list[GuidelineResponse], tags=["guidelines"])
 async def get_guidelines_endpoint(
     department: Optional[str] = None,
     subcategory: Optional[str] = None,
@@ -755,7 +756,7 @@ async def delete_guideline_endpoint(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/search", response_model=List[GuidelineResponse], tags=["guidelines"])
+@router.post("/search", response_model=list[GuidelineResponse], tags=["guidelines"])
 async def search_guidelines_endpoint(
     query: str = Query(..., min_length=1),
     limit: int = Query(10, ge=1, le=100),
@@ -845,7 +846,7 @@ async def create_section(
         )
 
 
-@router.get("/guideline/{guideline_id}/sections", response_model=List[SectionResponse], tags=["sections"])
+@router.get("/guideline/{guideline_id}/sections", response_model=list[SectionResponse], tags=["sections"])
 async def get_sections(
     guideline_id: int = Path(..., ge=1),
     db: Session = Depends(get_db)
@@ -1121,7 +1122,7 @@ async def get_section_asset_endpoint(
     return format_section_asset_response(asset)
 
 
-@router.get("/section/{section_id}/assets", response_model=List[SectionAssetResponse], tags=["section-assets"])
+@router.get("/section/{section_id}/assets", response_model=list[SectionAssetResponse], tags=["section-assets"])
 async def get_section_assets_endpoint(
     section_id: int = Path(..., ge=1),
     asset_type: Optional[str] = None,
@@ -1409,7 +1410,7 @@ async def get_asset_endpoint(
     return format_asset_response(asset)
 
 
-@router.get("/guideline/{guideline_id}/assets", response_model=List[AssetResponse], tags=["assets"])
+@router.get("/guideline/{guideline_id}/assets", response_model=list[AssetResponse], tags=["assets"])
 async def get_guideline_assets_endpoint(
     guideline_id: int = Path(..., ge=1),
     asset_type: Optional[str] = None,

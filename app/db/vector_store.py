@@ -185,7 +185,7 @@
 """
 Vector database interface for storing and retrieving knowledge base documents.
 """
-
+import os
 import logging
 from typing import List, Dict, Any, Optional
 from functools import lru_cache
@@ -309,10 +309,26 @@ def ingest_documents(document_paths: List[str], chunk_size: int = 1000, chunk_ov
     """
     logger.info(f"Ingesting {len(document_paths)} documents")
     
+    # Validate documents exist first
+    valid_paths = []
+    for path in document_paths:
+        if not os.path.exists(path):
+            logger.error(f"Document path does not exist: {path}")
+            continue
+        if not os.path.isfile(path):
+            logger.error(f"Document path is not a file: {path}")
+            continue
+        valid_paths.append(path)
+    
+    if not valid_paths:
+        logger.error("No valid document paths provided for ingestion")
+        return 0
+    
     # Load documents
     documents = []
-    for path in document_paths:
+    for path in valid_paths:
         try:
+            logger.info(f"Loading document: {path}")
             loader = get_document_loader(path)
             docs = loader.load()
             
@@ -322,36 +338,60 @@ def ingest_documents(document_paths: List[str], chunk_size: int = 1000, chunk_ov
                 # Apply text preprocessing
                 from app.utils.text_processing import preprocess_document_text
                 processed_content = preprocess_document_text(doc.page_content)
-                processed_docs.append(Document(page_content=processed_content, metadata=doc.metadata))
+                
+                # Skip empty documents
+                if not processed_content.strip():
+                    logger.warning(f"Document has no content after processing: {path}")
+                    continue
+                
+                # Ensure metadata has source
+                metadata = doc.metadata or {}
+                if "source" not in metadata:
+                    metadata["source"] = path
+                
+                processed_docs.append(Document(page_content=processed_content, metadata=metadata))
                 
             documents.extend(processed_docs)
             logger.info(f"Loaded {path}: {len(processed_docs)} documents")
         except Exception as e:
             logger.error(f"Error loading {path}: {str(e)}")
     
+    if not documents:
+        logger.error("No documents loaded successfully for ingestion")
+        return 0
+    
     # Split documents
     split_docs = []
-    if qa_format:
-        # Use Q&A-optimized splitting
-        from app.utils.qa_chunker import split_documents_qa_aware
-        split_docs = split_documents_qa_aware(documents, chunk_size, chunk_overlap)
-    else:
-        # Use standard splitting
-        text_splitter = get_text_splitter(chunk_size, chunk_overlap)
-        split_docs = text_splitter.split_documents(documents)
+    try:
+        if qa_format:
+            # Use Q&A-optimized splitting
+            from app.utils.qa_chunker import split_documents_qa_aware
+            split_docs = split_documents_qa_aware(documents, chunk_size, chunk_overlap)
+        else:
+            # Use standard splitting
+            text_splitter = get_text_splitter(chunk_size, chunk_overlap)
+            split_docs = text_splitter.split_documents(documents)
+    except Exception as e:
+        logger.error(f"Error splitting documents: {str(e)}")
+        return 0
     
     logger.info(f"Split into {len(split_docs)} chunks")
     
+    # Check if we have any document chunks after splitting
+    if not split_docs:
+        logger.warning("No document chunks created during splitting")
+        return 0
+    
     # Get vector store and add documents
-    if split_docs:
+    try:
         vector_store = get_vector_store()
         vector_store.add_documents(split_docs)
         vector_store.persist()
         
         logger.info(f"Successfully ingested {len(split_docs)} document chunks")
         return len(split_docs)
-    else:
-        logger.warning("No document chunks created during ingestion")
+    except Exception as e:
+        logger.error(f"Error adding documents to vector store: {str(e)}")
         return 0
 
 
